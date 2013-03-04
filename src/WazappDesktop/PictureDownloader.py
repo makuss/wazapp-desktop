@@ -53,7 +53,7 @@ class PictureDownloader(Events):
         with self._pictureRequestsLock:
             if 'timeout' not in self._pictureRequests.get(jid, {}):
                 delay = 0.2 * len(self._pictureRequests)
-                #print 'onProfilePictureId(): requesting new picture for "%s" in %4.2fs' % (Contacts.instance().jid2name(jid), delay)
+                #print 'onProfilePictureId(): requesting new picture for "%s" in %4.2fs' % (Contacts.instance().getName(jid), delay)
                 request = self._pictureRequests.get(jid, {'numTimeouts': 0})
                 request['timer'] = threading.Timer(delay, lambda: self.methodsInterface.call('picture_get', (jid,)))
                 request['timeout'] = threading.Timer(delay + 2.0 + 0.5 * request['numTimeouts'], lambda: self._requestPictureTimeout(jid))
@@ -67,17 +67,17 @@ class PictureDownloader(Events):
         #print 'onProfilePicture(): %s %s' % (jid, filename)
         pictureFilename = Contacts.instance().getContactPicture(jid)
         if pictureFilename is not None:
-            #print 'onProfilePicture(): moving pic for "%s" pic to %s' % (Contacts.instance().jid2name(jid), pictureFilename)
+            #print 'onProfilePicture(): moving pic for "%s" pic to %s' % (Contacts.instance().getName(jid), pictureFilename)
             shutil.move(filename, pictureFilename)
         else:
-            print 'onProfilePicture(): received picture for "%s" without requesting it' % (Contacts.instance().jid2name(jid))
+            print 'onProfilePicture(): received picture for "%s" without requesting it' % (Contacts.instance().getName(jid))
 
     def _requestPictureTimeout(self, jid):
         with self._pictureRequestsLock:
             if jid in self._pictureRequests:
                 numTimeouts = self._pictureRequests[jid]['numTimeouts'] + 1
                 if numTimeouts >= 5:
-                    print '_requestPictureTimeout(): pic request for "%s" timed out %d times, giving up' % (Contacts.instance().jid2name(jid), numTimeouts)
+                    print '_requestPictureTimeout(): pic request for "%s" timed out %d times, giving up' % (Contacts.instance().getName(jid), numTimeouts)
                     self._removeRequest(jid)
                     return
                 self._pictureRequests[jid]['numTimeouts'] = numTimeouts

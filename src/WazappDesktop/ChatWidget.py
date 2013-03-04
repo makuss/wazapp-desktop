@@ -32,7 +32,6 @@ class ChatWidget(QDockWidget):
     show_history_since_signal = Signal(float)
     show_history_num_messages_signal = Signal(int)
     has_unread_message_signal = Signal(str, bool)
-    edit_contact_signal = Signal(str, str)
     paragraphIdFormat = 'p%s'
     paragraphFormat = '''
         <p id=%(paragraphId)s>
@@ -46,7 +45,7 @@ class ChatWidget(QDockWidget):
     def __init__(self, conversationId):
         super(ChatWidget, self).__init__()
         self._conversationId = conversationId
-        self._windowTitle = Contacts.instance().jid2name(self._conversationId)
+        self._windowTitle = Contacts.instance().getName(self._conversationId)
         self._ownJid = Contacts.instance().phoneToConversationId(getConfig('countryCode') + getConfig('phoneNumber'))
         self._defaultContactPicture = '/%s/im-user.png' % QDir.searchPaths('icons')[0]
         self._chatViewUrl = QUrl('file://%s/ChatView.html' % QDir.searchPaths('html')[0])
@@ -189,7 +188,7 @@ class ChatWidget(QDockWidget):
         knownContact = len(parameters.get('name', '')) > 0
         menu = QMenu()
         results = {
-            menu.addAction('Edit Contact' if knownContact else 'Add Contact'): (self.edit_contact_signal.emit, (parameters.get('name', ''), parameters['jid'])),
+            menu.addAction('Edit Contact' if knownContact else 'Add Contact'): (Contacts.instance().edit_contact_signal.emit, (parameters.get('jid', ''), parameters['name'])),
         }
         result = menu.exec_(QCursor.pos())
         if result in results:
@@ -242,7 +241,7 @@ class ChatWidget(QDockWidget):
             self._bodyElement.appendInside('<p class="date">%s</p>' % parameters['formattedDate'])
 
         parameters['senderJid'] = senderJid
-        parameters['senderName'] = Contacts.instance().jid2name(senderJid)
+        parameters['senderName'] = Contacts.instance().getName(senderJid)
         parameters['senderDisplayName'] = parameters['senderName']
 
         parameters['senderPic'] = Contacts.instance().getContactPicture(senderJid)

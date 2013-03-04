@@ -6,10 +6,8 @@ from PyQt4.QtGui import QMainWindow, QTabWidget
 
 from .ChatWidget import ChatWidget
 from .ContactsWidget import ContactsWidget
-from .Contacts import Contacts
 
 class MainWindow(QMainWindow):
-    add_contact_signal = Signal(str, str)
     send_message_signal = Signal(str, unicode)
     has_unread_message_signal = Signal(bool)
 
@@ -26,16 +24,7 @@ class MainWindow(QMainWindow):
 
         self._contactsWidget = ContactsWidget()
         self.setCentralWidget(self._contactsWidget)
-        self.add_contact_signal.connect(self._contactsWidget.addContact)
         self._contactsWidget.start_chat_signal.connect(self.startChat)
-        self._contactsWidget.import_google_contacts_signal.connect(Contacts.instance().importGoogleContacts)
-        self._contactsWidget.update_contact_signal.connect(Contacts.instance().updateContact)
-        self._contactsWidget.remove_contact_signal.connect(Contacts.instance().removeContact)
-
-        self._contactsWidget.contactsUpdated(Contacts.instance().getContacts())
-        Contacts.instance().contacts_updated_signal.connect(self._contactsWidget.contactsUpdated)
-        Contacts.instance().contact_status_changed_signal.connect(self._contactsWidget.contactStatusChanged)
-        Contacts.instance().edit_contact_signal.connect(self._contactsWidget.editContact)
 
         self._settings = QSettings('wazapp', 'wazapp-desktop')
         for conversationId in self._settings.value('mainWindow/openConversations').toStringList():
@@ -117,7 +106,6 @@ class MainWindow(QMainWindow):
             self._chatWidgets[conversationId] = dockWidget
             dockWidget.send_message_signal.connect(self.send_message_signal)
             dockWidget.has_unread_message_signal.connect(self.unreadMessage)
-            dockWidget.edit_contact_signal.connect(self._contactsWidget.editContact)
 
         dockWidget = self._chatWidgets[conversationId]
         dockWidget.show()

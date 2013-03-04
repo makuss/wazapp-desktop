@@ -8,7 +8,8 @@ from PyQt4.QtCore import pyqtSlot as Slot, pyqtSignal as Signal, QDir
 from PyQt4.QtGui import QWidget, QListWidgetItem, QLineEdit, QInputDialog, QIcon, QMenu
 from PyQt4.uic import loadUi
 
-from helpers import getConfig, setConfig
+from .helpers import getConfig, setConfig
+from .Contacts import Contacts
 
 class ListWidgetItem(QListWidgetItem):
 
@@ -36,9 +37,6 @@ class ListWidgetItem(QListWidgetItem):
 
 class ContactsWidget(QWidget):
     start_chat_signal = Signal(str)
-    import_google_contacts_signal = Signal(str, str)
-    update_contact_signal = Signal(str, str)
-    remove_contact_signal = Signal(str)
 
     def __init__(self):
         super(ContactsWidget, self).__init__()
@@ -49,24 +47,28 @@ class ContactsWidget(QWidget):
         self.importGoogleContactsButton.setIcon(QIcon.fromTheme('browser-download'))
         self.addContactButton.setIcon(QIcon.fromTheme('add'))
 
+        self.contactsUpdated()
+        Contacts.instance().contacts_updated_signal.connect(self.contactsUpdated)
+        Contacts.instance().contact_status_changed_signal.connect(self.contactStatusChanged)
+        Contacts.instance().edit_contact_signal.connect(self.editContact)
+
     def on_contactList_customContextMenuRequested(self, pos):
         item = self.contactList.itemAt(pos)
         if item is None:
             return
         menu = QMenu()
         results = {}
-        results[menu.addAction('Edit Contact')] = self.editContact
-        results[menu.addAction('Remove Contact')] = self.removeContact
+        results[menu.addAction('Edit Contact')] = (self.editContact, item._conversationId, item.text())
+        results[menu.addAction('Remove Contact')] = (Contacts.instance().removeContact, item._conversationId)
         result = menu.exec_(self.contactList.mapToGlobal(pos))
         if result in results:
-            results[result](item.text(), item._conversationId)
-
-    def removeContact(self, name, conversationId):
-        self.remove_contact_signal.emit(conversationId)
+            handler = results[result][0]
+            args = results[result][1:]
+            handler(*args)
 
     @Slot()
     @Slot(str, str)
-    def editContact(self, name='', conversationId=''):
+    def editContact(self, conversationId='', name=''):
         phone = conversationId.split('@')[0]
         if len(phone) == 0 or phone[0] != '+':
             phone = '+' + phone
@@ -76,44 +78,49 @@ class ContactsWidget(QWidget):
         phone, ok = QInputDialog.getText(self, 'Contact Phone', 'Enter this contact\'s phone number\n(leading with a "+" and your country code)', text=phone)
         if not ok:
             return
-        self.update_contact_signal.emit(name, phone)
+        Contacts.instance().updateContact(phone, name)
 
-    @Slot(dict)
-    def contactsUpdated(self, contacts):
+    @Slot()
+    def contactsUpdated(self):
         self.contactList.clear()
-        self._items = {}
-        for conversationId, data in contacts.items():
-            name = data.get('name', 'unnamed contact')
-            self.addContact(name, conversationId)
+        for conversationId in Contacts.instance().getAllConversationIds():
+            self.addContact(conversationId)
 
     @Slot()
     def on_addContactButton_clicked(self):
         self.editContact()
 
-    @Slot(str, str)
-    def addContact(self, name, conversationId):
+    def addContact(self, conversationId):
+        name = Contacts.instance().getName(conversationId)
         item = ListWidgetItem(name)
         item._conversationId = conversationId
-        phone = conversationId.split('@')[0]
-        if '-' in phone:
+        self._items[conversationId] = item
+        self.contactStatusChanged(conversationId)
+        self.contactList.addItem(item)
+
+    @Slot(str)
+    def contactStatusChanged(self, conversationId):
+        if conversationId not in self._items:
+            print 'received contact status for unknown contact:', conversationId
+            return
+
+        item = self._items[conversationId]
+
+        contacts = Contacts.instance()
+        status = contacts.getStatus(conversationId)
+        phone = contacts.getPhone(conversationId)
+        if contacts.isGroup(conversationId):
             item.setToolTip('Group: %s' % (phone))
             item.setGroup()
         else:
-            item.setToolTip('Phone: +%s\nno information available (is this really a WhatApp user)' % (phone))
-            item.setUnknown()
-        self._items[conversationId] = item
-        self.contactList.addItem(item)
-
-    @Slot(str, dict)
-    def contactStatusChanged(self, conversationId, status):
-        if conversationId in self._items:
-            item = self._items[conversationId]
-            item.setOnline(status['available'])
-            formattedDate = datetime.datetime.fromtimestamp(status['lastSeen']).strftime('%d-%m-%Y %H:%M:%S')
-            phone = conversationId.split('@')[0]
-            item.setToolTip('Phone: +%s\nAvailable: %s (last seen %s)' % (phone, status['available'], formattedDate))
-        else:
-            print 'received contact status for unknown contact:', conversationId
+            if status.get('available') is None:
+                item.setToolTip('Phone: +%s\nno information available' % (phone))
+                item.setUnknown()
+            else:
+                item.setOnline(status['available'])
+                formattedDate = datetime.datetime.fromtimestamp(status['lastSeen']).strftime('%d-%m-%Y %H:%M:%S')
+                phone = conversationId.split('@')[0]
+                item.setToolTip('Phone: +%s\nAvailable: %s (last seen %s)' % (phone, status['available'], formattedDate))
 
     @Slot(QListWidgetItem)
     def on_contactList_itemDoubleClicked(self, item):
@@ -128,4 +135,4 @@ class ContactsWidget(QWidget):
         if not ok:
             return
         setConfig('googleUsername', googleUsername)
-        self.import_google_contacts_signal.emit(googleUsername, googlePassword)
+        Contacts.instance().importGoogleContacts(googleUsername, googlePassword)

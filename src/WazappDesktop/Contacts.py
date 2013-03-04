@@ -13,8 +13,8 @@ from .helpers import CONTACTS_FILE, PICTURE_CACHE_PATH, getConfig, readObjectFro
 from Yowsup.Contacts.contacts import WAContactsSyncRequest
 
 class Contacts(QObject):
-    contacts_updated_signal = Signal(dict)
-    contact_status_changed_signal = Signal(str, dict)
+    contacts_updated_signal = Signal()
+    contact_status_changed_signal = Signal(str)
     edit_contact_signal = Signal(str, str)
     save_contacts_signal = Signal()
     userIdFormat = '%s@s.whatsapp.net'
@@ -29,7 +29,7 @@ class Contacts(QObject):
         self._contactStatus = {}
         self.save_contacts_signal.connect(self._saveContacts)
         self._loadContacts()
-        self.contacts_updated_signal.emit(self.getContacts())
+        self.contacts_updated_signal.emit()
 
     def _loadContacts(self):
         self._contacts = {}
@@ -43,24 +43,34 @@ class Contacts(QObject):
         # if there is an @, it's got to be a jid already
         if '@' in phoneOrGroup:
             return phoneOrGroup
-        # if there is exactly one - followed by 10 digits, it's got to be a group number
-        if phoneOrGroup.count('-') == 1 and phoneOrGroup[-11] == '-':
+        if self.isGroup(phoneOrGroup):
             return self.groupIdFormat % phoneOrGroup
         # strip all non numeric chars
         phoneOrGroup = re.sub('[\D]+', '', phoneOrGroup)
         return self.userIdFormat % phoneOrGroup
 
-    def jid2name(self, jid):
-        return self._contacts.get(jid, {}).get('name', jid)
+    def getName(self, conversationId):
+        return self._contacts.get(conversationId, {}).get('name', conversationId)
 
-    def getContacts(self):
-        return self._contacts.copy()
+    def getStatus(self, conversationId):
+        return self._contactStatus.get(conversationId, {'available': False, 'lastSeen': 0})
+
+    def getPhone(self, conversationId):
+        return conversationId.split('@')[0]
+
+    def isGroup(self, conversationId):
+        phone = self.getPhone(conversationId)
+        # if there is exactly one - followed by 10 digits, it's got to be a group number
+        return phone.count('-') == 1 and phone[-11] == '-'
+
+    def getAllConversationIds(self):
+        return self._contacts.keys()
 
     @Slot(str)
     def removeContact(self, conversationId):
         del self._contacts[conversationId]
         self.save_contacts_signal.emit()
-        self.contacts_updated_signal.emit(self.getContacts())
+        self.contacts_updated_signal.emit()
 
     def setContactName(self, conversationId, name):
         contact = self._contacts.get(conversationId, {})
@@ -80,7 +90,7 @@ class Contacts(QObject):
         return None
 
     @Slot(str, str)
-    def updateContact(self, name, phoneOrGroup):
+    def updateContact(self, phoneOrGroup, name):
         phoneOrGroup = phoneOrGroup.split('@', 1)[0]
         if phoneOrGroup.count('-') == 1 and phoneOrGroup[-11] == '-':
             phoneOrGroup = phoneOrGroup.strip(' ').lstrip('+')
@@ -92,21 +102,21 @@ class Contacts(QObject):
                 text = 'WhatsApp did not know about the phone number "%s"!\n' % (phoneOrGroup)
                 text += 'Please check that the number starts with a "+" and your country code.'
                 QMessageBox.warning(None, 'WhatsApp User Not Found', text)
-                self.edit_contact_signal.emit(name, phoneOrGroup)
+                self.edit_contact_signal.emit(phoneOrGroup, name)
                 return
         self.setContactName(self.phoneToConversationId(phoneOrGroup), name)
         self.save_contacts_signal.emit()
-        self.contacts_updated_signal.emit(self.getContacts())
+        self.contacts_updated_signal.emit()
 
     @Slot(str, object, object)
     def contactStatusChanged(self, conversationId, available, lastSeen):
-        status = self._contactStatus.get(conversationId, {'available': False, 'lastSeen': 0})
+        status = self.getStatus(conversationId)
         if available is not None:
             status['available'] = available
         if lastSeen is not None:
             status['lastSeen'] = lastSeen
         self._contactStatus[conversationId] = status
-        self.contact_status_changed_signal.emit(conversationId, status)
+        self.contact_status_changed_signal.emit(conversationId)
 
     def getWAUsers(self, phoneNumbers):
         waUsername = str(getConfig('countryCode') + getConfig('phoneNumber'))
@@ -149,7 +159,7 @@ class Contacts(QObject):
 
         self.save_contacts_signal.emit()
 
-        self.contacts_updated_signal.emit(self.getContacts())
+        self.contacts_updated_signal.emit()
         QMessageBox.information(None, 'Import successful', 'Found %d WhatsApp users in your %d Google contacts.' % (len(waUsers), len(googleContacts)))
 
 _instance = Contacts()
