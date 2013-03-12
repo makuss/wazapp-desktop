@@ -27,6 +27,11 @@ class WazappDesktop(QObject, Events):
         super(WazappDesktop, self).__init__()
         Contacts.instance().contacts_updated_signal.connect(self.checkPresence)
 
+        connectionManager = YowsupConnectionManager()
+        connectionManager.setAutoPong(True)
+        self.signalsInterface = connectionManager.getSignalsInterface()
+        self.methodsInterface = connectionManager.getMethodsInterface()
+
         self._hasUnreadMessage = False
         self._isOnline = False
 
@@ -46,13 +51,8 @@ class WazappDesktop(QObject, Events):
 
         self._ownJid = Contacts.instance().phoneToConversationId(getConfig('countryCode') + getConfig('phoneNumber'))
 
-        connectionManager = YowsupConnectionManager()
-        connectionManager.setAutoPong(True)
-
         self._pictureDownloader = PictureDownloader(connectionManager, Contacts.instance())
 
-        self.signalsInterface = connectionManager.getSignalsInterface()
-        self.methodsInterface = connectionManager.getMethodsInterface()
         for method, events in self.getEventBindings().iteritems():
             for event in events:
                 self.signalsInterface.registerListener(event, method)
