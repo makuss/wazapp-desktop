@@ -11,10 +11,14 @@ import signal
 import sys
 
 base_dir = os.path.dirname(os.path.abspath(__file__))
-os.sys.path.insert(0, os.path.join(base_dir, 'src'))
+sys.path.insert(0, os.path.join(base_dir, 'src'))
 
 from WazappDesktop.helpers import checkForYowsup, isAccountConfigured
 checkForYowsup()
+
+from WazappDesktop.Database import convertLegacyDatabases
+convertLegacyDatabases()
+
 from WazappDesktop.WazappDesktop import WazappDesktop
 
 def iconFromTheme(name, fallback=None):

@@ -9,6 +9,7 @@ import base64
 CONFIG_PATH = os.path.expanduser(os.path.join('~', '.config', 'wazapp'))
 CONFIG_FILE = os.path.join(CONFIG_PATH, 'config.conf')
 CONTACTS_FILE = os.path.join(CONFIG_PATH, 'contacts.conf')
+DATABASE_FILE = os.path.join(CONFIG_PATH, 'wazapp-desktop.db')
 LOG_FILE_TEMPLATE = os.path.join(CONFIG_PATH, 'chat_%s.log')
 PICTURE_CACHE_PATH = os.path.join(CONFIG_PATH, 'pics')
 if not os.path.exists(PICTURE_CACHE_PATH):

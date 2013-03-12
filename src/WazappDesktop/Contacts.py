@@ -8,7 +8,8 @@ import re
 from PyQt4.QtGui import QMessageBox
 from PyQt4.QtCore import QObject, pyqtSlot as Slot, pyqtSignal as Signal
 
-from .helpers import CONTACTS_FILE, PICTURE_CACHE_PATH, getConfig, readObjectFromFile, writeObjectToFile
+from .helpers import PICTURE_CACHE_PATH, getConfig
+from .ContactDB import ContactDB
 
 from Yowsup.Contacts.contacts import WAContactsSyncRequest
 
@@ -16,7 +17,6 @@ class Contacts(QObject):
     contacts_updated_signal = Signal()
     contact_status_changed_signal = Signal(str)
     edit_contact_signal = Signal(str, str)
-    save_contacts_signal = Signal()
     userIdFormat = '%s@s.whatsapp.net'
     groupIdFormat = '%s@g.us'
 
@@ -26,18 +26,11 @@ class Contacts(QObject):
 
     def __init__(self):
         super(Contacts, self).__init__()
-        self._contactStatus = {}
-        self.save_contacts_signal.connect(self._saveContacts)
-        self._loadContacts()
+        self._enableUpdateSignal()
+
+    def _enableUpdateSignal(self, enabled=True):
+        ContactDB.instance().contacts_updated_signal.connect(self.contacts_updated_signal)
         self.contacts_updated_signal.emit()
-
-    def _loadContacts(self):
-        self._contacts = {}
-        if os.path.exists(CONTACTS_FILE):
-            self._contacts = readObjectFromFile(CONTACTS_FILE)
-
-    def _saveContacts(self):
-        writeObjectToFile(CONTACTS_FILE, self._contacts)
 
     def phoneToConversationId(self, phoneOrGroup):
         # if there is an @, it's got to be a jid already
@@ -49,12 +42,6 @@ class Contacts(QObject):
         phoneOrGroup = re.sub('[\D]+', '', phoneOrGroup)
         return self.userIdFormat % phoneOrGroup
 
-    def getName(self, conversationId):
-        return self._contacts.get(conversationId, {}).get('name', conversationId)
-
-    def getStatus(self, conversationId):
-        return self._contactStatus.get(conversationId, {'available': False, 'lastSeen': 0})
-
     def getPhone(self, conversationId):
         return conversationId.split('@')[0]
 
@@ -64,30 +51,34 @@ class Contacts(QObject):
         return phone.count('-') == 1 and phone[-11] == '-'
 
     def getAllConversationIds(self):
-        return self._contacts.keys()
+        return [c.conversationId for c in ContactDB.instance().getAll()]
 
-    @Slot(str)
     def removeContact(self, conversationId):
-        del self._contacts[conversationId]
-        self.save_contacts_signal.emit()
-        self.contacts_updated_signal.emit()
+        ContactDB.instance().delete(conversationId)
 
     def setContactName(self, conversationId, name):
-        contact = self._contacts.get(conversationId, {})
-        contact['name'] = name
-        self._contacts[conversationId] = contact
+        ContactDB.instance().updateOrCreate(conversationId, name=name)
+
+    def getName(self, conversationId):
+        contact = ContactDB.instance().get(conversationId)
+        if contact is None:
+            return conversationId
+        return contact.name
 
     def setContactPictureId(self, conversationId, pictureId):
-        contact = self._contacts.get(conversationId, {})
-        contact['pictureId'] = pictureId
-        self._contacts[conversationId] = contact
-        self.save_contacts_signal.emit()
+        ContactDB.instance().updateOrCreate(conversationId, pictureId=pictureId)
 
     def getContactPicture(self, conversationId):
-        contact = self._contacts.get(conversationId, {})
-        if 'pictureId' in contact:
-            return '%s.jpeg' % os.path.join(PICTURE_CACHE_PATH, contact['pictureId'])
-        return None
+        contact = ContactDB.instance().get(conversationId)
+        if contact is None or contact.pictureId is None:
+            return None
+        return '%s.jpeg' % os.path.join(PICTURE_CACHE_PATH, contact.pictureId)
+
+    def getStatus(self, conversationId):
+        contact = ContactDB.instance().get(conversationId)
+        if contact is None:
+            return {'available': None, 'lastSeen': 0}
+        return {'available': contact.available, 'lastSeen': contact.lastSeen}
 
     @Slot(str, str)
     def updateContact(self, phoneOrGroup, name):
@@ -105,26 +96,26 @@ class Contacts(QObject):
                 self.edit_contact_signal.emit(phoneOrGroup, name)
                 return
         self.setContactName(self.phoneToConversationId(phoneOrGroup), name)
-        self.save_contacts_signal.emit()
-        self.contacts_updated_signal.emit()
 
     @Slot(str, object, object)
     def contactStatusChanged(self, conversationId, available, lastSeen):
-        status = self.getStatus(conversationId)
         if available is not None:
-            status['available'] = available
+            ContactDB.instance().updateOrCreate(conversationId, available=available)
         if lastSeen is not None:
-            status['lastSeen'] = lastSeen
-        self._contactStatus[conversationId] = status
+            ContactDB.instance().updateOrCreate(conversationId, lastSeen=lastSeen)
         self.contact_status_changed_signal.emit(conversationId)
 
     def getWAUsers(self, phoneNumbers):
+        waUsers = {}
         waUsername = str(getConfig('countryCode') + getConfig('phoneNumber'))
         waPassword = base64.b64decode(getConfig('password'))
         waContactsSync = WAContactsSyncRequest(waUsername, waPassword, phoneNumbers)
-        results = waContactsSync.send()
+        try:
+            results = waContactsSync.send()
+        except Exception as e:
+            QMessageBox.warning(None, 'Failure', 'Failed to connect to WhatsApp server.\nError was:\n%s' % (e))
+            return waUsers
 
-        waUsers = {}
         for entry in results.get('c', []):
             hasWhatsApp = bool(entry['w'])
             if hasWhatsApp:
@@ -142,6 +133,9 @@ class Contacts(QObject):
         except gdata.client.BadAuthentication as e:
             QMessageBox.warning(None, 'Authentication Failure', 'Failed to authenticate with Google for user:\n%s\n\nError was:\n%s' % (googleUsername, e))
             return
+        except Exception as e:
+            QMessageBox.warning(None, 'Failure', 'Failed to connect to Google.\nError was:\n%s' % (e))
+            return
 
         query = gdata.contacts.client.ContactsQuery()
         query.max_results = 10000
@@ -153,13 +147,12 @@ class Contacts(QObject):
                 googleContacts[number.text] = entry.title.text
 
         waUsers = self.getWAUsers(googleContacts.keys())
+        self._enableUpdateSignal(enabled=False)
         for googlePhone, waPhone in waUsers.items():
             name = googleContacts[googlePhone]
             self.setContactName(self.phoneToConversationId(waPhone), name)
+        self._enableUpdateSignal()
 
-        self.save_contacts_signal.emit()
-
-        self.contacts_updated_signal.emit()
         QMessageBox.information(None, 'Import successful', 'Found %d WhatsApp users in your %d Google contacts.' % (len(waUsers), len(googleContacts)))
 
 _instance = Contacts()

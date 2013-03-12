@@ -4,7 +4,6 @@
 import os
 import re
 import datetime
-import time
 import webbrowser
 
 from PyQt4.QtCore import Qt, pyqtSlot as Slot, pyqtSignal as Signal, QPoint, QDir, QUrl, QTimer
@@ -14,7 +13,7 @@ from PyQt4.uic import loadUi
 
 from .helpers import getConfig
 from .Contacts import Contacts
-from .ChatHistory import ChatHistory
+from .ContactDB import ContactDB
 
 url_pattern1 = re.compile(r"(^|[\n ])(([\w]+?://[\w\#$%&~.\-;:=,?@\[\]+]*)(/[\w\#$%&~/.\-;:=,?@\[\]+]*)?)", re.IGNORECASE | re.DOTALL)
 url_pattern2 = re.compile(r"(^|[\n ])(((www|ftp)\.[\w\#$%&~.\-;:=,?@\[\]+]*)(/[\w\#$%&~/.\-;:=,?@\[\]+]*)?)", re.IGNORECASE | re.DOTALL)
@@ -28,7 +27,7 @@ class ChatWidget(QDockWidget):
     send_message_signal = Signal(str, unicode)
     scroll_to_bottom_signal = Signal()
     show_message_signal = Signal(str, str, float, str, str, str)
-    show_history_message_signal = Signal(str, str, float, str, str, str, bool)
+    show_history_message_signal = Signal(str, str, datetime.datetime, str, str, str, bool)
     show_history_since_signal = Signal(float)
     show_history_num_messages_signal = Signal(int)
     has_unread_message_signal = Signal(str, bool)
@@ -116,17 +115,14 @@ class ChatWidget(QDockWidget):
     @Slot(datetime.date)
     @Slot(datetime.datetime)
     def showHistorySince(self, timestamp, minMessage=0, maxMessages=10000):
-        if type(timestamp) in (datetime.datetime, datetime.date):
-            timestamp = time.mktime(timestamp.timetuple())
         self._historyTimestamp = timestamp
-        history = ChatHistory.instance().get(self._conversationId)
-        timestampIndex = ChatHistory.instance().dataFields.index('timestamp')
-        for index, data in enumerate(history['list']):
-            if timestamp <= data[timestampIndex]:
-                numMessages = len(history['list']) - index
-                break
-        else:
+        if type(timestamp) is float:
+            timestamp = datetime.datetime.fromtimestamp(timestamp)
+        messages = ContactDB.instance().getMessageList(self._conversationId, since=timestamp)
+        if messages is None:
             numMessages = 0
+        else:
+            numMessages = len(messages)#.count()
         self.showHistoryNumMessages(min(max(minMessage, numMessages), maxMessages))
 
     @Slot(int)
@@ -145,9 +141,8 @@ class ChatWidget(QDockWidget):
             return
         # show last messages
         if self._showNumMessages > 0:
-            for data in ChatHistory.instance().get(self._conversationId)['list'][-self._showNumMessages:]:
-                messageId, timestamp, sender, receiver, message = data
-                self.show_history_message_signal.emit(self._conversationId, messageId, timestamp, sender, receiver, message, False)
+            for message in ContactDB.instance().getMessageList(self._conversationId, numMessages=self._showNumMessages):
+                self.show_history_message_signal.emit(self._conversationId, message.messageId, message.timestamp, message.sender, message.receiver, message.message, message.isRead)
             self._showNumMessages = 0
 
     def clearChatView(self):
@@ -218,9 +213,7 @@ class ChatWidget(QDockWidget):
         self.messageText.clear()
         self.send_message_signal.emit(self._conversationId, message)
 
-    @Slot(str, float, str, str, str)
-    @Slot(str, float, str, str, str, bool)
-    def showMessage(self, conversationId, messageId, timestamp, senderJid, receiver, message, isNewMessage=True):
+    def showMessage(self, conversationId, messageId, timestamp, senderJid, receiver, message, isRead=False):
         if len(message) == 0:
             return
         # make sure this message goes in the right chat view
@@ -234,8 +227,10 @@ class ChatWidget(QDockWidget):
 
         parameters = {}
         parameters['message'] = message
-        parameters['formattedDate'] = datetime.datetime.fromtimestamp(timestamp).strftime('%A, %d %B %Y')
-        parameters['formattedTime'] = datetime.datetime.fromtimestamp(timestamp).strftime('%H:%M:%S')
+        if type(timestamp) is float:
+            timestamp = datetime.datetime.fromtimestamp(timestamp)
+        parameters['formattedDate'] = timestamp.strftime('%A, %d %B %Y')
+        parameters['formattedTime'] = timestamp.strftime('%H:%M:%S')
         if self._lastDate != parameters['formattedDate']:
             self._lastDate = parameters['formattedDate']
             self._bodyElement.appendInside('<p class="date">%s</p>' % parameters['formattedDate'])
@@ -281,7 +276,7 @@ class ChatWidget(QDockWidget):
         # set scroll timer to scroll down in 100ms, after the new text is hopefully rendered (any better solutions?)
         self._scrollTimer.start(100)
 
-        if isNewMessage and not (self.isVisible() and self.isActiveWindow()):
+        if not isRead and not (self.isVisible() and self.isActiveWindow()):
             self.has_unread_message_signal.emit(self._conversationId, True)
 
     @Slot(str, str, str)

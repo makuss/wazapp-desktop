@@ -11,7 +11,7 @@ from PyQt4.QtCore import pyqtSlot as Slot, pyqtSignal as Signal, QObject
 from .MainWindow import MainWindow
 from .SystemTrayIcon import SystemTrayIcon
 from .Contacts import Contacts
-from .ChatHistory import ChatHistory
+from .ContactDB import ContactDB
 from .helpers import makeHtmlImageLink, getConfig
 from .Events import Events
 from .PictureDownloader import PictureDownloader
@@ -102,7 +102,7 @@ class WazappDesktop(QObject, Events):
         if type(message) is str:
             message = message.decode('utf8')
         #self._out('%s -> %s: %s' % (Contacts.instance().getName(sender), Contacts.instance().getName(receiver), message), timestamp=timestamp, logId=conversationId)
-        messageId = ChatHistory.instance().add(conversationId, messageId, timestamp, sender, receiver, message)
+        messageId = ContactDB.instance().addMessage(conversationId, messageId, timestamp, sender, receiver, message)
         if messageId is not None:
             self.show_message_signal.emit(conversationId, messageId, timestamp, sender, receiver, message)
 
