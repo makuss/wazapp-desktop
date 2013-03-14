@@ -306,14 +306,15 @@ class WazappDesktop(QObject, Events):
     @Events.bind('presence_available')
     def onPresenceAvailable(self, jid):
         #self._out('%s is now available' % Contacts.instance().getName(jid))
-        Contacts.instance().contactStatusChanged(jid, True, time.time())
+        Contacts.instance().setAvailable(jid, True)
+        Contacts.instance().setLastSeen(jid, time.time())
 
     @Events.bind('presence_unavailable')
     def onPresenceUnavailable(self, jid):
         #self._out('%s is now unavailable' % Contacts.instance().getName(jid))
-        Contacts.instance().contactStatusChanged(jid, False, None)
+        Contacts.instance().setAvailable(jid, False)
 
     @Events.bind('presence_updated')
     def onPresenceUpdated(self, jid, lastseen):
         #self._out('%s was last seen %s seconds ago' % (Contacts.instance().getName(jid), lastseen), logId=jid)
-        Contacts.instance().contactStatusChanged(jid, None, time.time() - lastseen)
+        Contacts.instance().setLastSeen(jid, time.time() - lastseen)

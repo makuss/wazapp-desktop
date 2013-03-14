@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 
 import os
-import datetime
 
 from PyQt4.QtCore import pyqtSlot as Slot, pyqtSignal as Signal, QDir
 from PyQt4.QtGui import QWidget, QListWidgetItem, QLineEdit, QInputDialog, QIcon, QMenu
@@ -40,7 +39,6 @@ class ContactsWidget(QWidget):
 
     def __init__(self):
         super(ContactsWidget, self).__init__()
-        self._items = {}
 
         loadUi(os.path.join(QDir.searchPaths('ui')[0], 'ContactsWidget.ui'), self)
 
@@ -82,6 +80,7 @@ class ContactsWidget(QWidget):
 
     @Slot()
     def contactsUpdated(self):
+        self._items = {}
         self.contactList.clear()
         for conversationId in Contacts.instance().getAllConversationIds():
             self.addContact(conversationId)
@@ -101,26 +100,27 @@ class ContactsWidget(QWidget):
     @Slot(str)
     def contactStatusChanged(self, conversationId):
         if conversationId not in self._items:
-            print 'received contact status for unknown contact:', conversationId
+            print 'ContactsWidgets.contactStatusChanged(): received contact status for unknown contact:', conversationId
             return
 
         item = self._items[conversationId]
 
         contacts = Contacts.instance()
-        status = contacts.getStatus(conversationId)
         phone = contacts.getPhone(conversationId)
         if contacts.isGroup(conversationId):
             item.setToolTip('Group: %s' % (phone))
             item.setGroup()
         else:
-            if status.get('available') is None:
+            lastSeen = contacts.getLastSeen(conversationId)
+            if lastSeen is None:
                 item.setToolTip('Phone: +%s\nno information available' % (phone))
                 item.setUnknown()
             else:
-                item.setOnline(status['available'])
-                formattedDate = datetime.datetime.fromtimestamp(status['lastSeen']).strftime('%d-%m-%Y %H:%M:%S')
+                available = bool(contacts.isAvailable(conversationId))
+                item.setOnline(available)
+                formattedDate = lastSeen.strftime('%d-%m-%Y %H:%M:%S')
                 phone = conversationId.split('@')[0]
-                item.setToolTip('Phone: +%s\nAvailable: %s (last seen %s)' % (phone, status['available'], formattedDate))
+                item.setToolTip('Phone: +%s\nAvailable: %s (last seen %s)' % (phone, available, formattedDate))
 
     @Slot(QListWidgetItem)
     def on_contactList_itemDoubleClicked(self, item):

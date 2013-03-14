@@ -4,6 +4,7 @@
 import os
 import base64
 import re
+import datetime
 
 from PyQt4.QtGui import QMessageBox
 from PyQt4.QtCore import QObject, pyqtSlot as Slot, pyqtSignal as Signal
@@ -26,10 +27,7 @@ class Contacts(QObject):
 
     def __init__(self):
         super(Contacts, self).__init__()
-        self._enableUpdateSignal()
-
-    def _enableUpdateSignal(self, enabled=True):
-        ContactDB.instance().contacts_updated_signal.connect(self.contacts_updated_signal)
+        self._available = {}
         self.contacts_updated_signal.emit()
 
     def phoneToConversationId(self, phoneOrGroup):
@@ -55,9 +53,11 @@ class Contacts(QObject):
 
     def removeContact(self, conversationId):
         ContactDB.instance().delete(conversationId)
+        self.contacts_updated_signal.emit()
 
     def setContactName(self, conversationId, name):
         ContactDB.instance().updateOrCreate(conversationId, name=name)
+        self.contacts_updated_signal.emit()
 
     def getName(self, conversationId):
         contact = ContactDB.instance().get(conversationId)
@@ -66,7 +66,14 @@ class Contacts(QObject):
         return contact.name
 
     def setContactPictureId(self, conversationId, pictureId):
-        ContactDB.instance().updateOrCreate(conversationId, pictureId=pictureId)
+        if pictureId != Contacts.instance().getContactPictureId(conversationId):
+            ContactDB.instance().updateOrCreate(conversationId, pictureId=pictureId)
+
+    def getContactPictureId(self, conversationId):
+        contact = ContactDB.instance().get(conversationId)
+        if contact is None:
+            return None
+        return contact.pictureId
 
     def getContactPicture(self, conversationId):
         contact = ContactDB.instance().get(conversationId)
@@ -74,11 +81,24 @@ class Contacts(QObject):
             return None
         return '%s.jpeg' % os.path.join(PICTURE_CACHE_PATH, contact.pictureId)
 
-    def getStatus(self, conversationId):
+    def setAvailable(self, conversationId, available):
+        self._available[conversationId] = available
+        self.contact_status_changed_signal.emit(conversationId)
+
+    def isAvailable(self, conversationId):
+        return self._available.get(conversationId)
+
+    def setLastSeen(self, conversationId, lastSeen):
+        if type(lastSeen) is float:
+            lastSeen = datetime.datetime.fromtimestamp(lastSeen)
+        ContactDB.instance().updateOrCreate(conversationId, lastSeen=lastSeen)
+        self.contact_status_changed_signal.emit(conversationId)
+
+    def getLastSeen(self, conversationId):
         contact = ContactDB.instance().get(conversationId)
         if contact is None:
-            return {'available': None, 'lastSeen': 0}
-        return {'available': contact.available, 'lastSeen': contact.lastSeen}
+            return None
+        return contact.lastSeen
 
     @Slot(str, str)
     def updateContact(self, phoneOrGroup, name):
@@ -96,14 +116,6 @@ class Contacts(QObject):
                 self.edit_contact_signal.emit(phoneOrGroup, name)
                 return
         self.setContactName(self.phoneToConversationId(phoneOrGroup), name)
-
-    @Slot(str, object, object)
-    def contactStatusChanged(self, conversationId, available, lastSeen):
-        if available is not None:
-            ContactDB.instance().updateOrCreate(conversationId, available=available)
-        if lastSeen is not None:
-            ContactDB.instance().updateOrCreate(conversationId, lastSeen=lastSeen)
-        self.contact_status_changed_signal.emit(conversationId)
 
     def getWAUsers(self, phoneNumbers):
         waUsers = {}
@@ -147,11 +159,11 @@ class Contacts(QObject):
                 googleContacts[number.text] = entry.title.text
 
         waUsers = self.getWAUsers(googleContacts.keys())
-        self._enableUpdateSignal(enabled=False)
         for googlePhone, waPhone in waUsers.items():
             name = googleContacts[googlePhone]
-            self.setContactName(self.phoneToConversationId(waPhone), name)
-        self._enableUpdateSignal()
+            ContactDB.instance().updateOrCreate(self.phoneToConversationId(waPhone), name=name)
+
+        self.contacts_updated_signal.emit()
 
         QMessageBox.information(None, 'Import successful', 'Found %d WhatsApp users in your %d Google contacts.' % (len(waUsers), len(googleContacts)))
 

@@ -6,23 +6,7 @@ from .helpers import checkForPeewee, DATABASE_FILE
 checkForPeewee()
 from peewee import SqliteDatabase, Model, CharField, DateTimeField, BooleanField, TextField, ForeignKeyField
 
-_sqlite_db = SqliteDatabase(DATABASE_FILE)
-
-def makeVolatile(BaseClass):
-    class VolatileClass(BaseClass):
-        def __init__(self, *args, **kwargs):
-            kwargs['null'] = True
-            super(VolatileClass, self).__init__(*args, **kwargs)
-            self.__volatile_value = None
-
-        def db_value(self, value):
-            self.__volatile_value = value
-            return None
-
-        def python_value(self, value):
-            return self.__volatile_value
-
-    return VolatileClass
+_sqlite_db = SqliteDatabase(DATABASE_FILE, threadlocals=True)
 
 class ContactModel(Model):
     class Meta:
@@ -32,7 +16,6 @@ class ContactModel(Model):
     name = CharField()
     pictureId = CharField(null=True)
     lastSeen = DateTimeField(null=True)
-    available = makeVolatile(BooleanField)()
 
 if not ContactModel.table_exists():
     ContactModel.create_table()
