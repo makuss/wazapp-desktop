@@ -9,17 +9,10 @@ from PyQt4.QtGui import QApplication, QIcon
 import os
 import signal
 import sys
+import argparse
 
 base_dir = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, os.path.join(base_dir, 'src'))
-
-from WazappDesktop.helpers import checkForYowsup, isAccountConfigured
-checkForYowsup()
-
-from WazappDesktop.Database import convertLegacyDatabases
-convertLegacyDatabases()
-
-from WazappDesktop.WazappDesktop import WazappDesktop
 
 def iconFromTheme(name, fallback=None):
     if QIcon.hasThemeIcon(name):
@@ -29,6 +22,16 @@ def iconFromTheme(name, fallback=None):
     return fallback
 
 def main():
+    argParser = argparse.ArgumentParser()
+    argParser.add_argument('--start-hidden', action='store_true', help='show only the notification icon')
+    args = argParser.parse_args()
+
+    from WazappDesktop.helpers import checkForYowsup, isAccountConfigured
+    checkForYowsup()
+    from WazappDesktop.Database import convertLegacyDatabases
+    convertLegacyDatabases()
+    from WazappDesktop.WazappDesktop import WazappDesktop
+
     app = QApplication(sys.argv)
     # add res dir to search path for 'icons:...' file names
     QDir.setSearchPaths('icons', [os.path.abspath(os.path.join(base_dir, 'res', 'icons'))])
@@ -52,7 +55,8 @@ def main():
 
     if isAccountConfigured():
         gui = WazappDesktop()
-        gui.show()
+        if not args.start_hidden:
+            gui.show()
         return app.exec_()
 
 
